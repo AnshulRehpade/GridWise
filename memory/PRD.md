@@ -37,7 +37,7 @@ Build a modern, showcase-worthy energy management dashboard for a Data Analyst/E
 2. **Wind Power** - Actual vs Predicted line chart, statistics
 3. **Solar Power** - Actual vs Predicted line chart, statistics
 4. **Machine Consumption** - Multi-machine energy charts, temperature monitoring
-5. **Model Performance** - Accuracy metrics, training, trend analysis, residual charts
+5. **Model Performance** - R² and error metrics, training, trend analysis, residual charts
 
 ### Features
 - [x] Real-time streaming data (WebSocket simulation)
@@ -60,7 +60,7 @@ Build a modern, showcase-worthy energy management dashboard for a Data Analyst/E
 - `POST /api/machine-consumption` - Machine energy/temp data
 - `POST /api/dashboard-summary` - Aggregated stats
 - `POST /api/ai-insights` - Claude AI analysis
-- `POST /api/model-performance` - Model metrics (MAE, RMSE, MAPE, accuracy trends)
+- `POST /api/model-performance` - Model metrics (MAE, RMSE, MAPE, R² scores)
 - `POST /api/train-model` - **NEW** Train ML models
 - `GET /api/model-status` - **NEW** Check trained model status
 - `POST /api/predict-with-trained` - **NEW** Get improved predictions
@@ -69,8 +69,8 @@ Build a modern, showcase-worthy energy management dashboard for a Data Analyst/E
 ### Model Training Features (NEW)
 - Algorithm selection: Gradient Boosting or Random Forest
 - 80/20 train/test split
-- R-squared accuracy calculation
-- Wind model achieves **64.7% test accuracy** (up from 42.7%)
+- R² (coefficient of determination) calculation
+- Wind model achieves **64.7% R²** on test set (up from 42.7%)
 - Solar model needs more feature engineering
 - Original vs Improved prediction comparison charts
 - MAE improvement percentage display

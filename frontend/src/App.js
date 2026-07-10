@@ -103,6 +103,7 @@ function App() {
   const [trainingInProgress, setTrainingInProgress] = useState(false);
   const [trainedPredictions, setTrainedPredictions] = useState(null);
   const [selectedAlgorithm, setSelectedAlgorithm] = useState('gradient_boosting');
+  const [featureImportance, setFeatureImportance] = useState(null);
 
   // Fetch available dates and model status
   useEffect(() => {
@@ -144,6 +145,10 @@ function App() {
       } else if (activeView === 'performance') {
         const res = await axios.post(`${API_URL}/api/model-performance`, { date: selectedDate });
         setPerformanceData(res.data);
+        // Fetch feature importance if models are trained
+        axios.get(`${API_URL}/api/feature-importance`)
+          .then(fiRes => { if (!fiRes.data.error) setFeatureImportance(fiRes.data); })
+          .catch(() => {});
       }
       
       setLoading(false);
@@ -186,6 +191,10 @@ function App() {
       // Refresh performance data
       const perfRes = await axios.post(`${API_URL}/api/model-performance`, { date: selectedDate });
       setPerformanceData(perfRes.data);
+      
+      // Fetch feature importance from newly trained models
+      const fiRes = await axios.get(`${API_URL}/api/feature-importance`);
+      if (!fiRes.data.error) setFeatureImportance(fiRes.data);
       
       return res.data;
     } catch (err) {
@@ -618,12 +627,12 @@ function App() {
                             </div>
                             <div className="grid grid-cols-2 gap-2 text-xs">
                               <div>
-                                <span className="text-zinc-500">Train Accuracy</span>
-                                <p className="text-wind font-mono text-lg">{modelStatus.wind_metrics.train_accuracy}%</p>
+                                <span className="text-zinc-500">Train R²</span>
+                                <p className="text-wind font-mono text-lg">{modelStatus.wind_metrics.train_r2}%</p>
                               </div>
                               <div>
-                                <span className="text-zinc-500">Test Accuracy</span>
-                                <p className="text-wind font-mono text-lg">{modelStatus.wind_metrics.test_accuracy}%</p>
+                                <span className="text-zinc-500">Test R²</span>
+                                <p className="text-wind font-mono text-lg">{modelStatus.wind_metrics.test_r2}%</p>
                               </div>
                               <div>
                                 <span className="text-zinc-500">Test MAE</span>
@@ -645,12 +654,12 @@ function App() {
                             </div>
                             <div className="grid grid-cols-2 gap-2 text-xs">
                               <div>
-                                <span className="text-zinc-500">Train Accuracy</span>
-                                <p className="text-solar font-mono text-lg">{modelStatus.solar_metrics.train_accuracy}%</p>
+                                <span className="text-zinc-500">Train R²</span>
+                                <p className="text-solar font-mono text-lg">{modelStatus.solar_metrics.train_r2}%</p>
                               </div>
                               <div>
-                                <span className="text-zinc-500">Test Accuracy</span>
-                                <p className="text-solar font-mono text-lg">{modelStatus.solar_metrics.test_accuracy}%</p>
+                                <span className="text-zinc-500">Test R²</span>
+                                <p className="text-solar font-mono text-lg">{modelStatus.solar_metrics.test_r2}%</p>
                               </div>
                               <div>
                                 <span className="text-zinc-500">Test MAE</span>
@@ -752,6 +761,44 @@ function App() {
                     </div>
                   )}
 
+                  {/* Feature Importance Chart */}
+                  {featureImportance && (featureImportance.wind || featureImportance.solar) && (
+                    <div className="grid grid-cols-2 gap-6" data-testid="feature-importance-section">
+                      {featureImportance.wind && (
+                        <div className="card p-5 border-l-4 border-l-wind">
+                          <div className="flex items-center gap-3 mb-4">
+                            <BarChart2 className="w-5 h-5 text-wind" />
+                            <h3 className="font-heading font-semibold text-white">Wind — Feature Importance</h3>
+                          </div>
+                          <ResponsiveContainer width="100%" height={220}>
+                            <ComposedChart layout="vertical" data={featureImportance.wind}>
+                              <XAxis type="number" stroke="#52525B" fontSize={11} fontFamily="JetBrains Mono" />
+                              <YAxis type="category" dataKey="feature" stroke="#52525B" fontSize={10} fontFamily="JetBrains Mono" width={160} />
+                              <Tooltip content={<CustomTooltip />} />
+                              <Bar dataKey="importance" name="Importance" fill="#0EA5E9" radius={[0, 4, 4, 0]} />
+                            </ComposedChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+                      {featureImportance.solar && (
+                        <div className="card p-5 border-l-4 border-l-solar">
+                          <div className="flex items-center gap-3 mb-4">
+                            <BarChart2 className="w-5 h-5 text-solar" />
+                            <h3 className="font-heading font-semibold text-white">Solar — Feature Importance</h3>
+                          </div>
+                          <ResponsiveContainer width="100%" height={220}>
+                            <ComposedChart layout="vertical" data={featureImportance.solar}>
+                              <XAxis type="number" stroke="#52525B" fontSize={11} fontFamily="JetBrains Mono" />
+                              <YAxis type="category" dataKey="feature" stroke="#52525B" fontSize={10} fontFamily="JetBrains Mono" width={160} />
+                              <Tooltip content={<CustomTooltip />} />
+                              <Bar dataKey="importance" name="Importance" fill="#F59E0B" radius={[0, 4, 4, 0]} />
+                            </ComposedChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Original Metrics Summary */}
                   <div className="grid grid-cols-2 gap-6">
                     {/* Wind Model Metrics */}
@@ -763,8 +810,8 @@ function App() {
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <MetricCard 
-                          label="Avg Accuracy" 
-                          value={performanceData?.wind_overall?.avg_accuracy || '--'} 
+                          label="MAPE Score" 
+                          value={performanceData?.wind_overall?.avg_mape_score || '--'} 
                           unit="%" 
                           color="wind"
                           icon={Target}
@@ -808,8 +855,8 @@ function App() {
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <MetricCard 
-                          label="Avg Accuracy" 
-                          value={performanceData?.solar_overall?.avg_accuracy || '--'} 
+                          label="MAPE Score" 
+                          value={performanceData?.solar_overall?.avg_mape_score || '--'} 
                           unit="%" 
                           color="solar"
                           icon={Target}
@@ -846,16 +893,16 @@ function App() {
                     </div>
                   </div>
 
-                  {/* Accuracy Trend Chart */}
+                  {/* MAPE Score Trend Chart */}
                   <div className="card p-5" data-testid="accuracy-trend-chart">
-                    <h3 className="font-heading font-semibold text-white mb-4">Model Accuracy Trend (30 Days)</h3>
+                    <h3 className="font-heading font-semibold text-white mb-4">Prediction Score Trend — 100 − MAPE% (30 Days)</h3>
                     <ResponsiveContainer width="100%" height={300}>
                       <LineChart data={performanceData?.wind_trend || []}>
                         <XAxis dataKey="date" stroke="#52525B" fontSize={10} fontFamily="JetBrains Mono" angle={-45} textAnchor="end" height={60} />
                         <YAxis stroke="#52525B" fontSize={11} fontFamily="JetBrains Mono" domain={[0, 100]} />
                         <Tooltip content={<CustomTooltip />} />
                         <ReferenceLine y={80} stroke="#10B981" strokeDasharray="3 3" label={{ value: 'Target 80%', fill: '#10B981', fontSize: 10 }} />
-                        <Line type="monotone" dataKey="accuracy" name="Wind Accuracy" stroke="#0EA5E9" strokeWidth={2} dot={{ r: 3 }} />
+                        <Line type="monotone" dataKey="mape_score" name="Wind MAPE Score" stroke="#0EA5E9" strokeWidth={2} dot={{ r: 3 }} />
                       </LineChart>
                     </ResponsiveContainer>
                     <div className="mt-4">
@@ -865,7 +912,7 @@ function App() {
                           <YAxis stroke="#52525B" fontSize={11} fontFamily="JetBrains Mono" domain={[0, 100]} />
                           <Tooltip content={<CustomTooltip />} />
                           <ReferenceLine y={80} stroke="#10B981" strokeDasharray="3 3" label={{ value: 'Target 80%', fill: '#10B981', fontSize: 10 }} />
-                          <Line type="monotone" dataKey="accuracy" name="Solar Accuracy" stroke="#F59E0B" strokeWidth={2} dot={{ r: 3 }} />
+                          <Line type="monotone" dataKey="mape_score" name="Solar MAPE Score" stroke="#F59E0B" strokeWidth={2} dot={{ r: 3 }} />
                         </LineChart>
                       </ResponsiveContainer>
                     </div>

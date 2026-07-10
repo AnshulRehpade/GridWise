@@ -8,7 +8,6 @@ from datetime import datetime
 import asyncio
 import random
 import json
-# from emergentintegrations.llm.chat import LlmChat, UserMessage  # Not installed
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, mean_squared_error
@@ -47,20 +46,13 @@ def load_csv_data():
 
 wind_data, solar_data, machine_data = load_csv_data()
 
-# Helper to parse date
-def parse_date(date_str):
-    try:
-        return datetime.strptime(date_str.strip(), "%d-%m-%Y")
-    except:
-        return None
-
 def filter_by_date(df, date_str):
     df_copy = df.copy()
     df_copy['parsed_date'] = df_copy['time'].apply(lambda x: x.split(' ')[0] if ' ' in str(x) else x)
     filtered = df_copy[df_copy['parsed_date'] == date_str]
     return filtered
 
-def extract_features(df, model_type='wind'):
+def extract_features(df):
     """Extract features for ML training"""
     features = []
     targets = []
@@ -229,8 +221,6 @@ async def get_dashboard_summary(data: dict):
 @app.post("/api/model-performance")
 async def get_model_performance(data: dict):
     """Calculate comprehensive model performance metrics"""
-    import numpy as np
-    
     # Get all available dates for trend analysis
     dates = wind_data['time'].apply(lambda x: x.split(' ')[0] if ' ' in str(x) else x).unique().tolist()[:30]
     
@@ -248,14 +238,14 @@ async def get_model_performance(data: dict):
             mae = np.mean(np.abs(actual - predicted))
             rmse = np.sqrt(np.mean((actual - predicted) ** 2))
             mape = np.mean(np.abs((actual - predicted) / (actual + 0.001))) * 100
-            accuracy = max(0, 100 - mape)
+            mape_score = max(0, 100 - mape)
             
             wind_metrics_trend.append({
                 "date": date_str,
                 "mae": round(mae, 2),
                 "rmse": round(rmse, 2),
                 "mape": round(mape, 2),
-                "accuracy": round(accuracy, 1)
+                "mape_score": round(mape_score, 1)
             })
         
         if not solar_filtered.empty:
@@ -265,14 +255,14 @@ async def get_model_performance(data: dict):
             mae = np.mean(np.abs(actual - predicted))
             rmse = np.sqrt(np.mean((actual - predicted) ** 2))
             mape = np.mean(np.abs((actual - predicted) / (actual + 0.001))) * 100
-            accuracy = max(0, 100 - mape)
+            mape_score = max(0, 100 - mape)
             
             solar_metrics_trend.append({
                 "date": date_str,
                 "mae": round(mae, 2),
                 "rmse": round(rmse, 2),
                 "mape": round(mape, 2),
-                "accuracy": round(accuracy, 1)
+                "mape_score": round(mape_score, 1)
             })
     
     # Calculate overall metrics
@@ -280,18 +270,18 @@ async def get_model_performance(data: dict):
         "avg_mae": round(np.mean([m['mae'] for m in wind_metrics_trend]), 2) if wind_metrics_trend else 0,
         "avg_rmse": round(np.mean([m['rmse'] for m in wind_metrics_trend]), 2) if wind_metrics_trend else 0,
         "avg_mape": round(np.mean([m['mape'] for m in wind_metrics_trend]), 2) if wind_metrics_trend else 0,
-        "avg_accuracy": round(np.mean([m['accuracy'] for m in wind_metrics_trend]), 1) if wind_metrics_trend else 0,
-        "best_day": max(wind_metrics_trend, key=lambda x: x['accuracy'])['date'] if wind_metrics_trend else "",
-        "worst_day": min(wind_metrics_trend, key=lambda x: x['accuracy'])['date'] if wind_metrics_trend else ""
+        "avg_mape_score": round(np.mean([m['mape_score'] for m in wind_metrics_trend]), 1) if wind_metrics_trend else 0,
+        "best_day": max(wind_metrics_trend, key=lambda x: x['mape_score'])['date'] if wind_metrics_trend else "",
+        "worst_day": min(wind_metrics_trend, key=lambda x: x['mape_score'])['date'] if wind_metrics_trend else ""
     }
     
     solar_overall = {
         "avg_mae": round(np.mean([m['mae'] for m in solar_metrics_trend]), 2) if solar_metrics_trend else 0,
         "avg_rmse": round(np.mean([m['rmse'] for m in solar_metrics_trend]), 2) if solar_metrics_trend else 0,
         "avg_mape": round(np.mean([m['mape'] for m in solar_metrics_trend]), 2) if solar_metrics_trend else 0,
-        "avg_accuracy": round(np.mean([m['accuracy'] for m in solar_metrics_trend]), 1) if solar_metrics_trend else 0,
-        "best_day": max(solar_metrics_trend, key=lambda x: x['accuracy'])['date'] if solar_metrics_trend else "",
-        "worst_day": min(solar_metrics_trend, key=lambda x: x['accuracy'])['date'] if solar_metrics_trend else ""
+        "avg_mape_score": round(np.mean([m['mape_score'] for m in solar_metrics_trend]), 1) if solar_metrics_trend else 0,
+        "best_day": max(solar_metrics_trend, key=lambda x: x['mape_score'])['date'] if solar_metrics_trend else "",
+        "worst_day": min(solar_metrics_trend, key=lambda x: x['mape_score'])['date'] if solar_metrics_trend else ""
     }
     
     # Residuals for selected date (hourly breakdown)
@@ -351,7 +341,7 @@ async def train_model(data: dict):
     
     # Train Wind Model
     if model_type in ['wind', 'both']:
-        X_wind, y_wind = extract_features(wind_data, 'wind')
+        X_wind, y_wind = extract_features(wind_data)
         X_train, X_test, y_train, y_test = train_test_split(X_wind, y_wind, test_size=test_size, random_state=42)
         
         if algorithm == 'gradient_boosting':
@@ -379,7 +369,7 @@ async def train_model(data: dict):
         train_rmse = np.sqrt(mean_squared_error(y_train, y_pred_train))
         test_rmse = np.sqrt(mean_squared_error(y_test, y_pred_test))
         
-        # Calculate R-squared as accuracy metric (better for regression)
+        # Calculate R² (coefficient of determination)
         train_ss_res = np.sum((y_train - y_pred_train) ** 2)
         train_ss_tot = np.sum((y_train - np.mean(y_train)) ** 2)
         train_r2 = max(0, 1 - (train_ss_res / train_ss_tot)) * 100
@@ -395,8 +385,8 @@ async def train_model(data: dict):
             'test_mae': round(test_mae, 2),
             'train_rmse': round(train_rmse, 2),
             'test_rmse': round(test_rmse, 2),
-            'train_accuracy': round(train_r2, 1),
-            'test_accuracy': round(test_r2, 1),
+            'train_r2': round(train_r2, 1),
+            'test_r2': round(test_r2, 1),
             'samples_train': len(X_train),
             'samples_test': len(X_test)
         }
@@ -404,11 +394,19 @@ async def train_model(data: dict):
         # Save model to disk
         joblib.dump(wind_model, os.path.join(MODELS_DIR, 'wind_model.joblib'))
         
+        # Save feature importance
+        wind_importances = [
+            {"feature": name, "importance": round(float(imp), 4)}
+            for name, imp in sorted(zip(FEATURE_NAMES, wind_model.feature_importances_), key=lambda x: x[1], reverse=True)
+        ]
+        with open(os.path.join(MODELS_DIR, 'wind_feature_importance.json'), 'w') as f:
+            json.dump(wind_importances, f, indent=2)
+        
         results['wind'] = trained_models['wind_metrics']
     
     # Train Solar Model
     if model_type in ['solar', 'both']:
-        X_solar, y_solar = extract_features(solar_data, 'solar')
+        X_solar, y_solar = extract_features(solar_data)
         X_train, X_test, y_train, y_test = train_test_split(X_solar, y_solar, test_size=test_size, random_state=42)
         
         if algorithm == 'gradient_boosting':
@@ -436,7 +434,7 @@ async def train_model(data: dict):
         train_rmse = np.sqrt(mean_squared_error(y_train, y_pred_train))
         test_rmse = np.sqrt(mean_squared_error(y_test, y_pred_test))
         
-        # Calculate R-squared as accuracy metric
+        # Calculate R² (coefficient of determination)
         train_ss_res = np.sum((y_train - y_pred_train) ** 2)
         train_ss_tot = np.sum((y_train - np.mean(y_train)) ** 2)
         train_r2 = max(0, 1 - (train_ss_res / train_ss_tot)) * 100
@@ -452,14 +450,22 @@ async def train_model(data: dict):
             'test_mae': round(test_mae, 2),
             'train_rmse': round(train_rmse, 2),
             'test_rmse': round(test_rmse, 2),
-            'train_accuracy': round(train_r2, 1),
-            'test_accuracy': round(test_r2, 1),
+            'train_r2': round(train_r2, 1),
+            'test_r2': round(test_r2, 1),
             'samples_train': len(X_train),
             'samples_test': len(X_test)
         }
         
         # Save model to disk
         joblib.dump(solar_model, os.path.join(MODELS_DIR, 'solar_model.joblib'))
+        
+        # Save feature importance
+        solar_importances = [
+            {"feature": name, "importance": round(float(imp), 4)}
+            for name, imp in sorted(zip(FEATURE_NAMES, solar_model.feature_importances_), key=lambda x: x[1], reverse=True)
+        ]
+        with open(os.path.join(MODELS_DIR, 'solar_feature_importance.json'), 'w') as f:
+            json.dump(solar_importances, f, indent=2)
         
         results['solar'] = trained_models['solar_metrics']
     
@@ -493,7 +499,7 @@ async def predict_with_trained(data: dict):
     
     # Wind predictions
     if trained_models['wind'] is not None and not wind_filtered.empty:
-        X_wind, y_actual = extract_features(wind_filtered, 'wind')
+        X_wind, y_actual = extract_features(wind_filtered)
         y_pred = trained_models['wind'].predict(X_wind)
         
         for i, (_, row) in enumerate(wind_filtered.iterrows()):
@@ -508,7 +514,7 @@ async def predict_with_trained(data: dict):
     
     # Solar predictions
     if trained_models['solar'] is not None and not solar_filtered.empty:
-        X_solar, y_actual = extract_features(solar_filtered, 'solar')
+        X_solar, y_actual = extract_features(solar_filtered)
         y_pred = trained_models['solar'].predict(X_solar)
         
         for i, (_, row) in enumerate(solar_filtered.iterrows()):
@@ -550,6 +556,32 @@ async def predict_with_trained(data: dict):
         "solar_improvement": solar_improvement,
         "date": date_str
     }
+
+FEATURE_NAMES = ["hour", "hour_sin", "hour_cos", "day_sin", "month_sin", "baseline_predicted_power", "hour_squared"]
+
+@app.get("/api/feature-importance")
+async def get_feature_importance():
+    """Return feature importances from trained models"""
+    result = {}
+    
+    if trained_models['wind'] is not None:
+        importances = trained_models['wind'].feature_importances_
+        result['wind'] = [
+            {"feature": name, "importance": round(float(imp), 4)}
+            for name, imp in sorted(zip(FEATURE_NAMES, importances), key=lambda x: x[1], reverse=True)
+        ]
+    
+    if trained_models['solar'] is not None:
+        importances = trained_models['solar'].feature_importances_
+        result['solar'] = [
+            {"feature": name, "importance": round(float(imp), 4)}
+            for name, imp in sorted(zip(FEATURE_NAMES, importances), key=lambda x: x[1], reverse=True)
+        ]
+    
+    if not result:
+        return {"error": "No trained models available. Train a model first via /api/train-model.", "wind": None, "solar": None}
+    
+    return result
 
 @app.post("/api/ai-insights")
 async def get_ai_insights(data: dict):

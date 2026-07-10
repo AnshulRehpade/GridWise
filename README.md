@@ -1,285 +1,224 @@
-# GridWise - Energy Intelligence Platform
+# GridWise — Energy Intelligence Platform
 
-A modern, AI-powered energy management dashboard for monitoring, analyzing, and predicting renewable energy generation with real-time insights.
+A modern energy management dashboard for monitoring, analyzing, and predicting renewable energy generation. Built with FastAPI + React, featuring ML-based forecast refinement, real-time streaming, and anomaly detection.
 
-![GridWise Banner](https://img.shields.io/badge/Energy-Management-brightgreen?style=flat-square)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.109.0-blue?style=flat-square)
 ![React](https://img.shields.io/badge/React-18.2.0-blue?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.9+-yellow?style=flat-square)
+![scikit-learn](https://img.shields.io/badge/scikit--learn-1.5.2-orange?style=flat-square)
 
-## 🌟 Features
+---
+
+## Features
 
 ### Dashboard & Monitoring
-- **Real-Time Overview**: Live energy generation stats with status indicators
-- **Wind Power Tracking**: Actual vs predicted wind generation with hourly breakdown
-- **Solar Power Tracking**: Actual vs predicted solar generation with hourly breakdown
-- **Machine Consumption**: Monitor 5 machines with energy consumption and temperature tracking
-- **Anomaly Detection**: Real-time alerts for unusual energy consumption or temperature spikes
+- **Real-time streaming** — WebSocket-fed live power, grid frequency, and load indicators
+- **Wind & Solar tracking** — Hourly actual vs predicted generation charts
+- **Machine consumption** — 5-machine energy and temperature monitoring
+- **Anomaly detection** — Threshold-based alerts (temp > 47°C, energy > 9 kWh)
 
-### Analytics & Insights
-- **Model Performance Dashboard**: Comprehensive metrics including MAE, RMSE, MAPE, and accuracy trends
-- **Prediction Accuracy Analysis**: Compare original vs improved predictions
-- **Residual Charts**: Visualize prediction errors and model performance over time
-- **Historical Trend Analysis**: Track model accuracy across 30 days of data
+### Model Performance & Training
+- **Metrics dashboard** — MAE, RMSE, MAPE, and MAPE Score (100 − MAPE%) per day and 30-day trends
+- **Interactive model training** — Train Gradient Boosting or Random Forest regressors from the UI
+- **R² reporting** — Train/test R² (coefficient of determination) for trained models
+- **Original vs improved comparison** — Side-by-side prediction charts with MAE improvement %
+- **Feature importance** — Horizontal bar charts showing learned feature weights
+- **Residual analysis** — Per-hour error breakdown with color-coded severity
 
-### Machine Learning
-- **Model Training**: Train Gradient Boosting or Random Forest models
-- **Feature Engineering**: Advanced time-based features (hour, day, month, cyclical encodings)
-- **Model Comparison**: Compare original predictions with trained model improvements
-- **Persistent Models**: Save trained models using joblib for future predictions
+### AI Insights
+- Rule-based energy analysis panel (generation strength, prediction quality)
 
-### User Interface
-- **Dark Theme**: Modern dark UI with Tailwind CSS
-- **Responsive Design**: Works seamlessly on desktop and tablet
-- **Interactive Charts**: Recharts for visualization (Line, Area, Pie, Bar charts)
-- **Sidebar Navigation**: Easy access to all sections with collapsible menu
-- **Date Picker**: Select historical data from available dates
+---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 GridWise/
-├── backend/                    # FastAPI Python backend
-│   ├── server.py              # Main API server
-│   ├── models/                # Trained ML models (joblib)
-│   ├── requirements.txt        # Python dependencies
-│   ├── test_predictions.csv    # Wind power data (19,656 samples)
-│   ├── test_solar_predictions.csv # Solar power data (19,656 samples)
-│   └── machine_test_data.csv   # Machine consumption data
-│
-├── frontend/                   # React dashboard
-│   ├── src/
-│   │   ├── App.js             # Main application component
-│   │   ├── App.css            # Styling
-│   │   └── index.js           # Entry point
-│   ├── package.json           # NPM dependencies
-│   └── public/
-│       └── index.html         # HTML template
-│
-└── README.md                   # This file
+├── backend/
+│   ├── server.py                  # FastAPI app (all endpoints + ML training)
+│   ├── models/                    # Persisted joblib models + feature importance JSON
+│   ├── test_predictions.csv       # Wind: 19,656 samples (time, ActualPower, PredictedPower)
+│   ├── test_solar_predictions.csv # Solar: 19,656 samples
+│   ├── machine_test_data.csv      # 5 machines × (energy, temperature)
+│   └── requirements.txt
+├── frontend/
+│   ├── src/App.js                 # Single-file React SPA (all views)
+│   ├── src/App.css                # Tailwind + custom styles
+│   ├── package.json
+│   └── public/index.html
+└── README.md
 ```
 
-## 🚀 Quick Start
+---
+
+## Quick Start
 
 ### Prerequisites
-- **Python 3.9+** with pip
-- **Node.js 14+** with npm
-- **macOS, Linux, or Windows** with bash/terminal
+- Python 3.9+
+- Node.js 14+
 
-### Installation
+### Install
 
-1. **Clone/Navigate to project directory**
-   ```bash
-   cd GridWise
-   ```
-
-2. **Install Backend Dependencies**
-   ```bash
-   cd backend
-   pip install -r requirements.txt
-   # Or on macOS with system Python:
-   pip install --break-system-packages -r requirements.txt
-   ```
-
-3. **Install Frontend Dependencies**
-   ```bash
-   cd ../frontend
-   npm install
-   ```
-
-### Running the Application
-
-**Terminal 1 - Start Backend Server**
 ```bash
+# Backend
 cd backend
-python3 -m uvicorn server:app --host 0.0.0.0 --port 8001
+pip install -r requirements.txt
+
+# Frontend
+cd ../frontend
+npm install
 ```
 
-**Terminal 2 - Start Frontend Server**
+### Run
+
 ```bash
+# Terminal 1 — Backend (port 8001)
+cd backend
+python3 -m uvicorn server:app --host 0.0.0.0 --port 8001
+
+# Terminal 2 — Frontend (port 3000)
 cd frontend
 PORT=3000 npm start
 ```
 
-### Access the Application
-- **Dashboard**: http://localhost:3000
-- **API Docs**: http://localhost:8001/docs (Swagger UI)
-- **API Health**: http://localhost:8001/api/health
+### Access
+- Dashboard: http://localhost:3000
+- API Docs (Swagger): http://localhost:8001/docs
+- Health check: http://localhost:8001/api/health
 
-## 📡 API Endpoints
+---
 
-### Health & Status
-- `GET /api/health` - Server health check
-- `GET /api/dates` - Available dates in dataset
-- `GET /api/model-status` - Check trained model status
+## API Endpoints
 
-### Energy Data
-- `POST /api/wind-prediction` - Get wind power data for a date
-- `POST /api/solar-prediction` - Get solar power data for a date
-- `POST /api/machine-consumption` - Get machine energy/temp data
-- `POST /api/dashboard-summary` - Aggregated energy stats
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/health` | Server health check |
+| GET | `/api/dates` | Available dates in dataset |
+| GET | `/api/model-status` | Trained model status + metrics |
+| GET | `/api/feature-importance` | Feature importance from trained models |
+| POST | `/api/wind-prediction` | Wind power data for a date |
+| POST | `/api/solar-prediction` | Solar power data for a date |
+| POST | `/api/machine-consumption` | Machine energy/temp data |
+| POST | `/api/dashboard-summary` | Aggregated wind + solar stats |
+| POST | `/api/model-performance` | MAE, RMSE, MAPE trends + residuals |
+| POST | `/api/ai-insights` | Rule-based energy insights |
+| POST | `/api/train-model` | Train ML models (GB or RF) |
+| POST | `/api/predict-with-trained` | Predictions from trained models |
+| WS | `/api/ws/realtime` | Live data stream (2s interval) |
 
-### Analytics
-- `POST /api/model-performance` - Performance metrics and trends
-- `POST /api/ai-insights` - AI-powered insights on energy patterns
+### Train Model Request
 
-### Machine Learning
-- `POST /api/train-model` - Train prediction models
-  ```json
-  {
-    "model_type": "wind|solar|both",
-    "algorithm": "gradient_boosting|random_forest",
-    "test_size": 0.2
-  }
-  ```
-- `POST /api/predict-with-trained` - Get improved predictions from trained models
+```json
+{
+  "model_type": "wind|solar|both",
+  "algorithm": "gradient_boosting|random_forest",
+  "test_size": 0.2
+}
+```
 
-### Real-Time
-- `WebSocket /api/ws/realtime` - Real-time data streaming (2-second updates)
+---
 
-## 📊 Data Overview
+## Machine Learning
 
-### Wind & Solar Predictions
-- **19,656 samples** per dataset
-- **Columns**: `time`, `ActualPower`, `PredictedPower`
-- **Date Range**: Historical power generation data
+### Model Approach
 
-### Machine Consumption
-- **5 Machines** monitored simultaneously
-- **Columns per machine**: Energy Consumed (kWh), Temperature (°C)
-- **Anomaly Detection**: Alerts when temp > 47°C or energy > 9 kWh
+The trained models function as a **correction layer** on top of an existing baseline forecast. Rather than predicting power output from raw weather or time data alone, they take the baseline model's predicted power as one of their input features and learn to refine that prediction using additional time-based signals. The system's value is in reducing the residual error of a pre-existing forecast, not in producing a standalone forecast from scratch.
 
-## 🤖 Machine Learning Models
+### Feature Engineering (7 features)
 
-### Feature Engineering
-The models use advanced time-based features:
-- Hour of day (0-23)
-- Hour sine/cosine encoding (cyclical features for 24-hour cycle)
-- Day of month sine encoding
-- Month sine encoding
-- Previous predicted power (baseline model's prediction)
-- Hour squared (polynomial feature)
+| Feature | Description |
+|---------|-------------|
+| `hour` | Hour of day (0–23) |
+| `hour_sin` | sin(2π × hour / 24) — cyclical encoding |
+| `hour_cos` | cos(2π × hour / 24) — cyclical encoding |
+| `day_sin` | sin(2π × day / 31) — day-of-month cycle |
+| `month_sin` | sin(2π × month / 12) — seasonal cycle |
+| `baseline_predicted_power` | Original model's prediction (key input) |
+| `hour_squared` | hour² — polynomial feature |
 
 ### Model Performance
-- **Wind Model**: ~64.7% test accuracy (Gradient Boosting)
-- **Solar Model**: Improved with feature engineering
-- **Algorithm Comparison**: Support for both Gradient Boosting and Random Forest
 
-## 🛠️ Tech Stack
+| Model | Algorithm | Test R² | Notes |
+|-------|-----------|---------|-------|
+| Wind | Gradient Boosting | ~64.7% | 100 estimators, max_depth=5 |
+| Solar | Gradient Boosting | Lower | Benefits from additional weather features |
+
+### Outputs
+- **Persisted models**: `backend/models/*.joblib`
+- **Feature importance**: `backend/models/*_feature_importance.json`
+- **Evaluation metrics**: R², MAE, RMSE returned via API
+
+---
+
+## Tech Stack
 
 ### Backend
-- **FastAPI** - Modern async Python web framework
-- **Uvicorn** - ASGI server
-- **Pandas & NumPy** - Data processing
-- **Scikit-learn** - Machine learning models
-- **Joblib** - Model persistence
-- **Python WebSockets** - Real-time data streaming
+| Library | Purpose |
+|---------|---------|
+| FastAPI 0.109 | Web framework + WebSocket |
+| Uvicorn | ASGI server |
+| Pandas 2.1 | Data loading and filtering |
+| NumPy | Numerical computation |
+| scikit-learn 1.5 | ML models (GBR, RFR), metrics |
+| Joblib | Model serialization |
 
 ### Frontend
-- **React 18** - UI library
-- **Tailwind CSS** - Utility-first styling
-- **Recharts** - Interactive charts
-- **Lucide React** - Icon library
-- **Framer Motion** - Animation library
-- **Axios** - HTTP client
+| Library | Purpose |
+|---------|---------|
+| React 18 | UI framework |
+| Recharts 2.10 | Charts (Line, Area, Pie, Bar, Composed) |
+| Lucide React | Icons |
+| Axios | HTTP client |
+| Tailwind CSS | Utility-first styling |
 
-### Styling & UI
-- **Dark Theme**: Zinc color palette
-- **Responsive**: Mobile-friendly design
-- **Animations**: Smooth transitions and loading states
+---
 
-## 📁 Project Structure
+## Configuration
 
-```
-backend/server.py (642 lines)
-├── CORS middleware configuration
-├── CSV data loading
-├── Feature extraction for ML
-├── API endpoints
-├── WebSocket manager
-└── ML model training & prediction
+| Setting | How |
+|---------|-----|
+| Backend port | Change in `server.py` `__main__` block or CLI flag |
+| Frontend port | `PORT=3000 npm start` |
+| Backend URL from frontend | Set `REACT_APP_BACKEND_URL` env var (defaults to proxy) |
+| Frontend proxy | `"proxy": "http://localhost:8001"` in `package.json` |
 
-frontend/src/App.js (955 lines)
-├── Navigation & sidebar
-├── Dashboard view
-├── Wind/Solar power views
-├── Machine consumption view
-├── Model performance analytics
-├── Custom components (charts, cards, metrics)
-└── API integration with axios
-```
+---
 
-## 🔧 Configuration
+## Model Training Guide
 
-### Environment Variables
-Create a `.env` file in the backend directory (optional):
-```bash
-# Not required for basic functionality
-# EMERGENT_LLM_KEY=your_api_key_here
-```
+1. Navigate to the **Model Performance** tab
+2. Select algorithm (Gradient Boosting recommended)
+3. Click **Train Models**
+4. Review R², MAE, RMSE in the training results panel
+5. Compare original vs improved predictions in the charts below
+6. Check **Feature Importance** bar charts to understand what the model learned
 
-### Customization
-- **Backend Port**: Edit `server.py` line 638 to change port
-- **Frontend Port**: Set `PORT` environment variable before `npm start`
-- **API URL**: Frontend uses relative proxy from `package.json`
+---
 
-## 📈 Model Training Guide
+## Troubleshooting
 
-1. Navigate to **Model Performance** tab
-2. Click **Train Models**
-3. Select:
-   - **Algorithm**: Gradient Boosting (recommended) or Random Forest
-   - **Model Type**: Wind, Solar, or Both
-   - **Test Size**: Train/test split percentage (default 20%)
-4. View training results with accuracy metrics
-5. Compare original vs improved predictions
+| Problem | Fix |
+|---------|-----|
+| Backend won't start | `lsof -i :8001` to check port; reinstall deps |
+| Frontend won't start | `rm -rf node_modules && npm install` |
+| API connection errors | Ensure backend on :8001, check CORS in server.py |
+| Empty charts | Verify CSV files exist in `backend/` directory |
+| Feature importance empty | Train models first via the UI or API |
 
-## 🐛 Troubleshooting
+---
 
-### Backend won't start
-```bash
-# Check if port 8001 is in use
-lsof -i :8001
-# Kill process if needed: kill -9 <PID>
-
-# Reinstall dependencies
-pip install --break-system-packages -r requirements.txt
-```
-
-### Frontend won't start
-```bash
-# Clear cache and reinstall
-rm -rf frontend/node_modules package-lock.json
-cd frontend && npm install
-npm start
-```
-
-### API connection errors
-- Ensure backend is running on `http://localhost:8001`
-- Check CORS settings in `backend/server.py`
-- Verify no firewall is blocking the ports
-
-### Missing data
-- Ensure CSV files are in `backend/` directory
-- Check file names match in `server.py` (lines 35-37)
-
-## 📝 Sample API Response
+## Sample API Call
 
 ```bash
-# Get wind predictions for a date
 curl -X POST http://localhost:8001/api/wind-prediction \
   -H "Content-Type: application/json" \
   -d '{"date": "02-01-2022"}'
+```
 
-# Response
+```json
 {
   "data": [
-    {
-      "time": "00:00",
-      "actual": 1234.56,
-      "predicted": 1200.34
-    },
-    ...
+    { "time": "00:00", "actual": 1234.56, "predicted": 1200.34 }
   ],
   "stats": {
     "average": 1250.45,
@@ -289,64 +228,13 @@ curl -X POST http://localhost:8001/api/wind-prediction \
 }
 ```
 
-## 🎯 Use Cases
+---
 
-### Data Analysts
-- Analyze energy generation patterns
-- Compare prediction accuracy across models
-- Track performance trends over time
-- Generate data-driven insights
-
-### Grid Operators
-- Monitor real-time energy generation
-- Receive anomaly alerts
-- Track machine health
-- Identify bottlenecks
-
-### ML Engineers
-- Train and evaluate prediction models
-- Compare different algorithms
-- Analyze residuals and errors
-- Optimize model parameters
-
-### Management
-- View high-level energy statistics
-- Track efficiency metrics
-- Understand generation distribution
-- Make informed operational decisions
-
-## 📚 Learning Resources
-
-- **FastAPI**: https://fastapi.tiangolo.com/
-- **React**: https://react.dev/
-- **Scikit-learn ML**: https://scikit-learn.org/
-- **Recharts**: https://recharts.org/
-- **Tailwind CSS**: https://tailwindcss.com/
-
-## 🤝 Contributing
-
-This is a showcase project for data engineering and ML skills. Feel free to:
-- Add new visualizations
-- Improve model accuracy
-- Add more data sources
-- Enhance UI/UX
-- Add additional features
-
-## 📄 License
+## License
 
 This project is provided as-is for educational and portfolio purposes.
 
-## 👨‍💻 Author
-
-Created as a modern energy management dashboard showcasing:
-- Full-stack development (React + FastAPI)
-- Machine learning model training
-- Real-time data processing
-- Data visualization & analytics
-- System design & architecture
-
 ---
 
-**Last Updated**: February 3, 2026  
-**Version**: 1.0.0  
-**Status**: ✅ Production Ready
+**Last Updated**: July 10, 2026
+**Version**: 1.1.0
