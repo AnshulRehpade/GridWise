@@ -70,7 +70,8 @@ Build a modern, showcase-worthy energy management dashboard for a Data Analyst/E
 - Algorithm selection: Gradient Boosting or Random Forest
 - 80/20 train/test split
 - R² (coefficient of determination) calculation
-- Wind model achieves **64.7% R²** on test set (up from 42.7%)
+- Wind model achieves **99.7% R²** on test set with temporal split
+- Solar model achieves **98.8% R²** on test set with temporal split
 - Solar model needs more feature engineering
 - Original vs Improved prediction comparison charts
 - MAE improvement percentage display

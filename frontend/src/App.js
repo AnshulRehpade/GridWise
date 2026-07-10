@@ -104,6 +104,7 @@ function App() {
   const [trainedPredictions, setTrainedPredictions] = useState(null);
   const [selectedAlgorithm, setSelectedAlgorithm] = useState('gradient_boosting');
   const [featureImportance, setFeatureImportance] = useState(null);
+  const [experiments, setExperiments] = useState([]);
 
   // Fetch available dates and model status
   useEffect(() => {
@@ -148,6 +149,10 @@ function App() {
         // Fetch feature importance if models are trained
         axios.get(`${API_URL}/api/feature-importance`)
           .then(fiRes => { if (!fiRes.data.error) setFeatureImportance(fiRes.data); })
+          .catch(() => {});
+        // Fetch experiment history
+        axios.get(`${API_URL}/api/experiments`)
+          .then(expRes => setExperiments(expRes.data.experiments || []))
           .catch(() => {});
       }
       
@@ -195,6 +200,10 @@ function App() {
       // Fetch feature importance from newly trained models
       const fiRes = await axios.get(`${API_URL}/api/feature-importance`);
       if (!fiRes.data.error) setFeatureImportance(fiRes.data);
+      
+      // Refresh experiment history
+      const expRes = await axios.get(`${API_URL}/api/experiments`);
+      setExperiments(expRes.data.experiments || []);
       
       return res.data;
     } catch (err) {
@@ -988,6 +997,55 @@ function App() {
                       </table>
                     </div>
                   </div>
+
+                  {/* Experiment History */}
+                  {experiments.length > 0 && (
+                    <div className="card p-5" data-testid="experiment-history">
+                      <div className="flex items-center gap-3 mb-4">
+                        <Activity className="w-5 h-5 text-primary" />
+                        <h3 className="font-heading font-semibold text-white">Experiment History</h3>
+                        <span className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full">
+                          {experiments.length} runs
+                        </span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-white/10">
+                              <th className="text-left py-3 px-3 text-zinc-400 font-medium">#</th>
+                              <th className="text-left py-3 px-3 text-zinc-400 font-medium">Timestamp</th>
+                              <th className="text-left py-3 px-3 text-zinc-400 font-medium">Algorithm</th>
+                              <th className="text-left py-3 px-3 text-zinc-400 font-medium">Type</th>
+                              <th className="text-right py-3 px-3 text-zinc-400 font-medium">Test Size</th>
+                              <th className="text-right py-3 px-3 text-wind font-medium">Wind R²</th>
+                              <th className="text-right py-3 px-3 text-wind font-medium">Wind MAE</th>
+                              <th className="text-right py-3 px-3 text-solar font-medium">Solar R²</th>
+                              <th className="text-right py-3 px-3 text-solar font-medium">Solar MAE</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {experiments.slice().reverse().map((exp) => (
+                              <tr key={exp.id} className="border-b border-white/5 hover:bg-white/5">
+                                <td className="py-2 px-3 font-mono text-zinc-300">{exp.id}</td>
+                                <td className="py-2 px-3 font-mono text-zinc-400 text-xs">{exp.timestamp?.split('T')[0]} {exp.timestamp?.split('T')[1]?.split('.')[0]}</td>
+                                <td className="py-2 px-3">
+                                  <span className="px-2 py-0.5 bg-zinc-800 rounded text-xs text-zinc-300">
+                                    {exp.algorithm?.replace('_', ' ')}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-3 text-zinc-300">{exp.model_type}</td>
+                                <td className="py-2 px-3 font-mono text-right text-zinc-300">{(exp.test_size * 100).toFixed(0)}%</td>
+                                <td className="py-2 px-3 font-mono text-right text-wind">{exp.results?.wind?.test_r2 ?? '--'}%</td>
+                                <td className="py-2 px-3 font-mono text-right text-wind">{exp.results?.wind?.test_mae ?? '--'}</td>
+                                <td className="py-2 px-3 font-mono text-right text-solar">{exp.results?.solar?.test_r2 ?? '--'}%</td>
+                                <td className="py-2 px-3 font-mono text-right text-solar">{exp.results?.solar?.test_mae ?? '--'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </>

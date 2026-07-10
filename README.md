@@ -41,6 +41,8 @@ GridWise/
 │   ├── test_solar_predictions.csv # Solar: 19,656 samples
 │   ├── machine_test_data.csv      # 5 machines × (energy, temperature)
 │   └── requirements.txt
+├── notebooks/
+│   └── eda.ipynb                  # Exploratory Data Analysis (distributions, correlations, patterns)
 ├── frontend/
 │   ├── src/App.js                 # Single-file React SPA (all views)
 │   ├── src/App.css                # Tailwind + custom styles
@@ -96,6 +98,7 @@ PORT=3000 npm start
 | GET | `/api/dates` | Available dates in dataset |
 | GET | `/api/model-status` | Trained model status + metrics |
 | GET | `/api/feature-importance` | Feature importance from trained models |
+| GET | `/api/experiments` | Training experiment history log |
 | POST | `/api/wind-prediction` | Wind power data for a date |
 | POST | `/api/solar-prediction` | Solar power data for a date |
 | POST | `/api/machine-consumption` | Machine energy/temp data |
@@ -124,24 +127,32 @@ PORT=3000 npm start
 
 The trained models function as a **correction layer** on top of an existing baseline forecast. Rather than predicting power output from raw weather or time data alone, they take the baseline model's predicted power as one of their input features and learn to refine that prediction using additional time-based signals. The system's value is in reducing the residual error of a pre-existing forecast, not in producing a standalone forecast from scratch.
 
-### Feature Engineering (7 features)
+### Feature Engineering (16 features)
 
 | Feature | Description |
 |---------|-------------|
 | `hour` | Hour of day (0–23) |
-| `hour_sin` | sin(2π × hour / 24) — cyclical encoding |
-| `hour_cos` | cos(2π × hour / 24) — cyclical encoding |
-| `day_sin` | sin(2π × day / 31) — day-of-month cycle |
-| `month_sin` | sin(2π × month / 12) — seasonal cycle |
-| `baseline_predicted_power` | Original model's prediction (key input) |
-| `hour_squared` | hour² — polynomial feature |
+| `hour_sin`, `hour_cos` | Cyclical hour encoding (24h cycle) |
+| `day_sin`, `day_cos` | Cyclical day-of-month encoding |
+| `month_sin`, `month_cos` | Cyclical month encoding (seasonal) |
+| `baseline_predicted_power` | Original model's prediction (key input for solar) |
+| `hour_squared` | Polynomial feature |
+| `lag_1`, `lag_2`, `lag_3` | Previous 1/2/3 hours' actual power |
+| `lag_24` | Same hour previous day |
+| `rolling_mean_6h` | Rolling mean of last 6 hours |
+| `rolling_std_6h` | Rolling std of last 6 hours (volatility) |
+| `rolling_mean_24h` | Rolling mean of last 24 hours |
 
 ### Model Performance
 
-| Model | Algorithm | Test R² | Notes |
-|-------|-----------|---------|-------|
-| Wind | Gradient Boosting | ~64.7% | 100 estimators, max_depth=5 |
-| Solar | Gradient Boosting | Lower | Benefits from additional weather features |
+| Model | Algorithm | Test R² | Test MAE | Notes |
+|-------|-----------|---------|----------|-------|
+| Wind | Gradient Boosting | 99.7% | 0.96 kW | Lag features dominate (strong autocorrelation) |
+| Solar | Gradient Boosting | 98.8% | 1.0 kW | Baseline + rolling volatility + hour cycle |
+
+The train/test split is **chronological** — the first 80% of timesteps are used for training, and the last 20% form the held-out test set. This prevents future data from leaking into training, which is critical for time-series forecasting.
+
+Solar MAPE is computed on **daylight hours only** (actual > 0.5 kW) to avoid the well-known zero-division problem with nighttime solar observations.
 
 ### Outputs
 - **Persisted models**: `backend/models/*.joblib`

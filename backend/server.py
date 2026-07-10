@@ -1,6 +1,5 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
 import os
 import pandas as pd
 import numpy as np
@@ -9,11 +8,8 @@ import asyncio
 import random
 import json
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 import joblib
-
-load_dotenv(override=False)
 
 app = FastAPI(title="GridWise API")
 
@@ -53,12 +49,16 @@ def filter_by_date(df, date_str):
     return filtered
 
 def extract_features(df):
-    """Extract features for ML training"""
-    features = []
-    targets = []
+    """Extract features for ML training/prediction.
     
-    for _, row in df.iterrows():
-        time_str = str(row['time'])
+    Includes time-based cyclical features, the baseline prediction,
+    and lag/rolling features to capture local temporal patterns.
+    """
+    df_feat = df.copy().reset_index(drop=True)
+    
+    # Parse time components
+    def parse_time_parts(time_str):
+        time_str = str(time_str)
         if ' ' in time_str:
             date_part, time_part = time_str.split(' ')
             hour = int(time_part.split(':')[0])
@@ -66,23 +66,64 @@ def extract_features(df):
             day = int(day_parts[0])
             month = int(day_parts[1])
         else:
-            hour = 0
-            day = 1
-            month = 1
-        
-        # Feature engineering
-        hour_sin = np.sin(2 * np.pi * hour / 24)
-        hour_cos = np.cos(2 * np.pi * hour / 24)
-        day_sin = np.sin(2 * np.pi * day / 31)
-        month_sin = np.sin(2 * np.pi * month / 12)
-        
-        # Use predicted power as a feature (existing model's prediction)
-        predicted = float(row['PredictedPower'])
-        
-        features.append([hour, hour_sin, hour_cos, day_sin, month_sin, predicted, hour**2])
-        targets.append(float(row['ActualPower']) * 100)
+            hour, day, month = 0, 1, 1
+        return hour, day, month
     
-    return np.array(features), np.array(targets)
+    parsed = df_feat['time'].apply(parse_time_parts)
+    df_feat['hour'] = parsed.apply(lambda x: x[0])
+    df_feat['day'] = parsed.apply(lambda x: x[1])
+    df_feat['month'] = parsed.apply(lambda x: x[2])
+    
+    # Cyclical time encodings
+    df_feat['hour_sin'] = np.sin(2 * np.pi * df_feat['hour'] / 24)
+    df_feat['hour_cos'] = np.cos(2 * np.pi * df_feat['hour'] / 24)
+    df_feat['day_sin'] = np.sin(2 * np.pi * df_feat['day'] / 31)
+    df_feat['day_cos'] = np.cos(2 * np.pi * df_feat['day'] / 31)
+    df_feat['month_sin'] = np.sin(2 * np.pi * df_feat['month'] / 12)
+    df_feat['month_cos'] = np.cos(2 * np.pi * df_feat['month'] / 12)
+    
+    # Baseline predicted power
+    df_feat['baseline_pred'] = df_feat['PredictedPower'].astype(float)
+    
+    # Polynomial
+    df_feat['hour_sq'] = df_feat['hour'] ** 2
+    
+    # Lag features (previous timesteps' actual power)
+    df_feat['lag_1'] = df_feat['ActualPower'].shift(1)
+    df_feat['lag_2'] = df_feat['ActualPower'].shift(2)
+    df_feat['lag_3'] = df_feat['ActualPower'].shift(3)
+    df_feat['lag_24'] = df_feat['ActualPower'].shift(24)  # Same hour previous day
+    
+    # Rolling statistics
+    df_feat['rolling_mean_6'] = df_feat['ActualPower'].shift(1).rolling(window=6, min_periods=1).mean()
+    df_feat['rolling_std_6'] = df_feat['ActualPower'].shift(1).rolling(window=6, min_periods=1).std()
+    df_feat['rolling_mean_24'] = df_feat['ActualPower'].shift(1).rolling(window=24, min_periods=1).mean()
+    
+    # Fill NaN from lags/rolling with column medians (for first few rows)
+    lag_cols = ['lag_1', 'lag_2', 'lag_3', 'lag_24', 'rolling_mean_6', 'rolling_std_6', 'rolling_mean_24']
+    for col in lag_cols:
+        df_feat[col] = df_feat[col].fillna(df_feat['ActualPower'].median())
+    
+    # Feature columns in consistent order
+    feature_cols = [
+        'hour', 'hour_sin', 'hour_cos', 'day_sin', 'day_cos',
+        'month_sin', 'month_cos', 'baseline_pred', 'hour_sq',
+        'lag_1', 'lag_2', 'lag_3', 'lag_24',
+        'rolling_mean_6', 'rolling_std_6', 'rolling_mean_24'
+    ]
+    
+    X = df_feat[feature_cols].values.astype(float)
+    y = (df_feat['ActualPower'].values.astype(float)) * 100  # Scale to kW
+    
+    return X, y
+
+# Feature names matching extract_features output order
+FEATURE_NAMES = [
+    "hour", "hour_sin", "hour_cos", "day_sin", "day_cos",
+    "month_sin", "month_cos", "baseline_predicted_power", "hour_squared",
+    "lag_1", "lag_2", "lag_3", "lag_24",
+    "rolling_mean_6h", "rolling_std_6h", "rolling_mean_24h"
+]
 
 @app.get("/api/health")
 async def health_check():
@@ -254,7 +295,12 @@ async def get_model_performance(data: dict):
             
             mae = np.mean(np.abs(actual - predicted))
             rmse = np.sqrt(np.mean((actual - predicted) ** 2))
-            mape = np.mean(np.abs((actual - predicted) / (actual + 0.001))) * 100
+            # MAPE only on daylight hours (actual > 0) to avoid division by zero
+            daylight_mask = actual > 0.5  # Threshold: > 0.5 kW counts as daylight
+            if daylight_mask.sum() > 0:
+                mape = np.mean(np.abs((actual[daylight_mask] - predicted[daylight_mask]) / actual[daylight_mask])) * 100
+            else:
+                mape = 0
             mape_score = max(0, 100 - mape)
             
             solar_metrics_trend.append({
@@ -310,12 +356,13 @@ async def get_model_performance(data: dict):
         hour = time_parts[1] if len(time_parts) > 1 else '00:00'
         actual = float(row['ActualPower']) * 100
         predicted = float(row['PredictedPower']) * 100
+        error_pct = round(abs(actual - predicted) / actual * 100, 1) if actual > 0.5 else 0
         solar_residuals.append({
             "time": hour,
             "actual": round(actual, 2),
             "predicted": round(predicted, 2),
             "residual": round(actual - predicted, 2),
-            "error_pct": round(abs(actual - predicted) / (actual + 0.001) * 100, 1)
+            "error_pct": error_pct
         })
     
     return {
@@ -327,6 +374,39 @@ async def get_model_performance(data: dict):
         "solar_residuals": solar_residuals,
         "selected_date": selected_date
     }
+
+EXPERIMENTS_FILE = os.path.join(MODELS_DIR, 'experiments.json')
+
+def _log_experiment(algorithm: str, model_type: str, test_size: float, results: dict):
+    """Append a training run record to experiments.json"""
+    # Load existing log
+    if os.path.exists(EXPERIMENTS_FILE):
+        with open(EXPERIMENTS_FILE, 'r') as f:
+            experiments = json.load(f)
+    else:
+        experiments = []
+    
+    entry = {
+        "id": len(experiments) + 1,
+        "timestamp": datetime.now().isoformat(),
+        "algorithm": algorithm,
+        "model_type": model_type,
+        "test_size": test_size,
+        "split_method": "temporal",
+        "n_features": len(FEATURE_NAMES),
+        "feature_names": FEATURE_NAMES,
+        "hyperparameters": {
+            "n_estimators": 100,
+            "max_depth": 5 if algorithm == "gradient_boosting" else 10,
+            "learning_rate": 0.1 if algorithm == "gradient_boosting" else None,
+        },
+        "results": results
+    }
+    
+    experiments.append(entry)
+    
+    with open(EXPERIMENTS_FILE, 'w') as f:
+        json.dump(experiments, f, indent=2)
 
 @app.post("/api/train-model")
 async def train_model(data: dict):
@@ -342,7 +422,12 @@ async def train_model(data: dict):
     # Train Wind Model
     if model_type in ['wind', 'both']:
         X_wind, y_wind = extract_features(wind_data)
-        X_train, X_test, y_train, y_test = train_test_split(X_wind, y_wind, test_size=test_size, random_state=42)
+        
+        # Temporal split: first (1-test_size) for train, last test_size for test
+        # Data is chronologically ordered, so no shuffling — avoids future data leaking into training
+        split_idx = int(len(X_wind) * (1 - test_size))
+        X_train, X_test = X_wind[:split_idx], X_wind[split_idx:]
+        y_train, y_test = y_wind[:split_idx], y_wind[split_idx:]
         
         if algorithm == 'gradient_boosting':
             wind_model = GradientBoostingRegressor(
@@ -388,7 +473,8 @@ async def train_model(data: dict):
             'train_r2': round(train_r2, 1),
             'test_r2': round(test_r2, 1),
             'samples_train': len(X_train),
-            'samples_test': len(X_test)
+            'samples_test': len(X_test),
+            'split_method': 'temporal'
         }
         
         # Save model to disk
@@ -407,7 +493,11 @@ async def train_model(data: dict):
     # Train Solar Model
     if model_type in ['solar', 'both']:
         X_solar, y_solar = extract_features(solar_data)
-        X_train, X_test, y_train, y_test = train_test_split(X_solar, y_solar, test_size=test_size, random_state=42)
+        
+        # Temporal split: chronological, no shuffling
+        split_idx = int(len(X_solar) * (1 - test_size))
+        X_train, X_test = X_solar[:split_idx], X_solar[split_idx:]
+        y_train, y_test = y_solar[:split_idx], y_solar[split_idx:]
         
         if algorithm == 'gradient_boosting':
             solar_model = GradientBoostingRegressor(
@@ -453,7 +543,8 @@ async def train_model(data: dict):
             'train_r2': round(train_r2, 1),
             'test_r2': round(test_r2, 1),
             'samples_train': len(X_train),
-            'samples_test': len(X_test)
+            'samples_test': len(X_test),
+            'split_method': 'temporal'
         }
         
         # Save model to disk
@@ -468,6 +559,9 @@ async def train_model(data: dict):
             json.dump(solar_importances, f, indent=2)
         
         results['solar'] = trained_models['solar_metrics']
+    
+    # Log experiment
+    _log_experiment(algorithm, model_type, test_size, results)
     
     return {
         "status": "success",
@@ -485,6 +579,15 @@ async def get_model_status():
         "wind_metrics": trained_models['wind_metrics'],
         "solar_metrics": trained_models['solar_metrics']
     }
+
+@app.get("/api/experiments")
+async def get_experiments():
+    """Return the experiment history log"""
+    if os.path.exists(EXPERIMENTS_FILE):
+        with open(EXPERIMENTS_FILE, 'r') as f:
+            experiments = json.load(f)
+        return {"experiments": experiments, "total": len(experiments)}
+    return {"experiments": [], "total": 0}
 
 @app.post("/api/predict-with-trained")
 async def predict_with_trained(data: dict):
@@ -556,8 +659,6 @@ async def predict_with_trained(data: dict):
         "solar_improvement": solar_improvement,
         "date": date_str
     }
-
-FEATURE_NAMES = ["hour", "hour_sin", "hour_cos", "day_sin", "month_sin", "baseline_predicted_power", "hour_squared"]
 
 @app.get("/api/feature-importance")
 async def get_feature_importance():

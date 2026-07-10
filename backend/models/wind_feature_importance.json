@@ -1,0 +1,66 @@
+[
+  {
+    "feature": "lag_1",
+    "importance": 0.9889
+  },
+  {
+    "feature": "lag_3",
+    "importance": 0.0067
+  },
+  {
+    "feature": "lag_2",
+    "importance": 0.0026
+  },
+  {
+    "feature": "rolling_std_6h",
+    "importance": 0.0009
+  },
+  {
+    "feature": "rolling_mean_6h",
+    "importance": 0.0003
+  },
+  {
+    "feature": "hour_sin",
+    "importance": 0.0001
+  },
+  {
+    "feature": "hour_cos",
+    "importance": 0.0001
+  },
+  {
+    "feature": "baseline_predicted_power",
+    "importance": 0.0001
+  },
+  {
+    "feature": "rolling_mean_24h",
+    "importance": 0.0001
+  },
+  {
+    "feature": "lag_24",
+    "importance": 0.0
+  },
+  {
+    "feature": "day_sin",
+    "importance": 0.0
+  },
+  {
+    "feature": "hour_squared",
+    "importance": 0.0
+  },
+  {
+    "feature": "hour",
+    "importance": 0.0
+  },
+  {
+    "feature": "day_cos",
+    "importance": 0.0
+  },
+  {
+    "feature": "month_sin",
+    "importance": 0.0
+  },
+  {
+    "feature": "month_cos",
+    "importance": 0.0
+  }
+]
