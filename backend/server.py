@@ -708,8 +708,48 @@ async def compare_models(data: dict):
             "overfit_gap": round(train_r2 - test_r2, 1)
         })
     
+    # Persistence baseline: predicted[t] = actual[t-1]
+    # Uses the raw ActualPower series (scaled to kW) for the test split
+    # y is already in kW (scaled by 100 in extract_features)
+    # We need the full y series to get lag values at the split boundary
+    full_y = y  # full target array, chronologically ordered
+    
+    # persistence prediction for test set: each test[i] predicted as full_y[split_idx + i - 1]
+    y_persist_test = full_y[split_idx - 1 : split_idx + len(y_test) - 1]  # shift by 1
+    
+    # For solar with daylight filter: apply same filter as MAPE calculation
+    if model_type == 'solar':
+        daylight_mask = y_test > 0.5
+        if daylight_mask.sum() > 1:
+            y_test_filtered = y_test[daylight_mask]
+            y_persist_filtered = y_persist_test[daylight_mask]
+            persist_mae = mean_absolute_error(y_test_filtered, y_persist_filtered)
+            persist_rmse = np.sqrt(mean_squared_error(y_test_filtered, y_persist_filtered))
+            ss_res = np.sum((y_test_filtered - y_persist_filtered) ** 2)
+            ss_tot = np.sum((y_test_filtered - np.mean(y_test_filtered)) ** 2)
+            persist_r2 = max(0, 1 - (ss_res / ss_tot)) * 100
+        else:
+            persist_mae, persist_rmse, persist_r2 = 0, 0, 0
+    else:
+        persist_mae = mean_absolute_error(y_test, y_persist_test)
+        persist_rmse = np.sqrt(mean_squared_error(y_test, y_persist_test))
+        ss_res = np.sum((y_test - y_persist_test) ** 2)
+        ss_tot = np.sum((y_test - np.mean(y_test)) ** 2)
+        persist_r2 = max(0, 1 - (ss_res / ss_tot)) * 100
+    
+    comparison.append({
+        "algorithm": "persistence_baseline",
+        "train_r2": None,
+        "test_r2": round(persist_r2, 1),
+        "train_mae": None,
+        "test_mae": round(persist_mae, 2),
+        "test_rmse": round(persist_rmse, 2),
+        "train_time_sec": 0,
+        "overfit_gap": 0
+    })
+    
     # Sort by test_r2 descending
-    comparison.sort(key=lambda x: x['test_r2'], reverse=True)
+    comparison.sort(key=lambda x: x['test_r2'] if x['test_r2'] is not None else -1, reverse=True)
     
     return {
         "model_type": model_type,

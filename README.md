@@ -152,7 +152,11 @@ The trained models function as a **correction layer** on top of an existing base
 | Model | Best Algorithm | Test R² | Test MAE | Why |
 |-------|---------------|---------|----------|-----|
 | Wind | Linear Regression | 99.8% | 0.77 kW | Lag-1 dominance → linear is optimal |
+| Wind | Persistence (naive) | 98.3% | 2.52 kW | Baseline: predict[t] = actual[t-1] |
 | Solar | Gradient Boosting | 98.8% | 1.0 kW | Nonlinear weather/hour interactions |
+| Solar | Persistence (naive) | 79.2% | 5.14 kW | Baseline: predict[t] = actual[t-1] |
+
+For wind, the best model (Linear Regression) improves MAE by 69% over naive persistence — a meaningful gain despite lag-1 dominance, because the model also leverages lag-2/3 and rolling statistics. For solar, Gradient Boosting improves MAE by 81% over persistence, reflecting the richer nonlinear signal available from baseline predictions and cyclical features.
 
 The comparison includes 4 algorithms: Linear Regression (baseline), Gradient Boosting, Random Forest, and XGBoost. Each is evaluated on the same temporal split with training time, overfit gap, and all standard metrics.
 
