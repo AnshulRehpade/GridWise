@@ -105,6 +105,8 @@ function App() {
   const [selectedAlgorithm, setSelectedAlgorithm] = useState('gradient_boosting');
   const [featureImportance, setFeatureImportance] = useState(null);
   const [experiments, setExperiments] = useState([]);
+  const [comparison, setComparison] = useState(null);
+  const [comparing, setComparing] = useState(false);
 
   // Fetch available dates and model status
   useEffect(() => {
@@ -599,6 +601,8 @@ function App() {
                         >
                           <option value="gradient_boosting">Gradient Boosting</option>
                           <option value="random_forest">Random Forest</option>
+                          <option value="xgboost">XGBoost</option>
+                          <option value="linear_regression">Linear Regression</option>
                         </select>
                         <button
                           onClick={() => trainModels('both')}
@@ -618,6 +622,37 @@ function App() {
                             <>
                               <Target className="w-4 h-4" />
                               Train Models
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={async () => {
+                            setComparing(true);
+                            try {
+                              const [windRes, solarRes] = await Promise.all([
+                                axios.post(`${API_URL}/api/compare-models`, { model_type: 'wind', test_size: 0.2 }),
+                                axios.post(`${API_URL}/api/compare-models`, { model_type: 'solar', test_size: 0.2 })
+                              ]);
+                              setComparison({ wind: windRes.data, solar: solarRes.data });
+                            } catch (err) { console.error(err); }
+                            finally { setComparing(false); }
+                          }}
+                          disabled={comparing}
+                          data-testid="compare-models-btn"
+                          className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2
+                            ${comparing
+                              ? 'bg-zinc-700 text-zinc-400 cursor-not-allowed'
+                              : 'bg-primary text-white hover:bg-primary/80'}`}
+                        >
+                          {comparing ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                              Comparing...
+                            </>
+                          ) : (
+                            <>
+                              <BarChart2 className="w-4 h-4" />
+                              Compare All
                             </>
                           )}
                         </button>
@@ -721,6 +756,55 @@ function App() {
                       </div>
                     )}
                   </div>
+
+                  {/* Model Comparison Results */}
+                  {comparison && (
+                    <div className="card p-5 border-l-4 border-l-primary" data-testid="model-comparison">
+                      <div className="flex items-center gap-3 mb-4">
+                        <BarChart2 className="w-5 h-5 text-primary" />
+                        <h3 className="font-heading font-semibold text-white">Model Comparison</h3>
+                        <span className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full">4 algorithms</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-6">
+                        {['wind', 'solar'].map(type => comparison[type] && (
+                          <div key={type}>
+                            <h4 className={`text-${type} font-medium text-sm mb-3 uppercase tracking-wide`}>
+                              {type === 'wind' ? '💨' : '☀️'} {type} — Best: {comparison[type].best_algorithm.replace('_', ' ')}
+                            </h4>
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="border-b border-white/10">
+                                  <th className="text-left py-2 px-2 text-zinc-400">Algorithm</th>
+                                  <th className="text-right py-2 px-2 text-zinc-400">Test R²</th>
+                                  <th className="text-right py-2 px-2 text-zinc-400">MAE</th>
+                                  <th className="text-right py-2 px-2 text-zinc-400">RMSE</th>
+                                  <th className="text-right py-2 px-2 text-zinc-400">Time</th>
+                                  <th className="text-right py-2 px-2 text-zinc-400">Overfit</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {comparison[type].comparison.map((row, i) => (
+                                  <tr key={row.algorithm} className={`border-b border-white/5 ${i === 0 ? 'bg-success/5' : ''}`}>
+                                    <td className="py-2 px-2 font-mono text-zinc-300">
+                                      {row.algorithm.replace('_', ' ')}
+                                      {i === 0 && <span className="ml-1 text-success">★</span>}
+                                    </td>
+                                    <td className="py-2 px-2 font-mono text-right text-white font-bold">{row.test_r2}%</td>
+                                    <td className="py-2 px-2 font-mono text-right text-zinc-300">{row.test_mae}</td>
+                                    <td className="py-2 px-2 font-mono text-right text-zinc-300">{row.test_rmse}</td>
+                                    <td className="py-2 px-2 font-mono text-right text-zinc-400">{row.train_time_sec}s</td>
+                                    <td className={`py-2 px-2 font-mono text-right ${row.overfit_gap > 5 ? 'text-warning' : 'text-success'}`}>
+                                      {row.overfit_gap}%
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Improved Predictions Chart */}
                   {trainedPredictions && (trainedPredictions.wind_predictions?.length > 0 || trainedPredictions.solar_predictions?.length > 0) && (

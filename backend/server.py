@@ -8,8 +8,11 @@ import asyncio
 import random
 import json
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
+from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error
+from xgboost import XGBRegressor
 import joblib
+import time
 
 app = FastAPI(title="GridWise API")
 
@@ -377,6 +380,18 @@ async def get_model_performance(data: dict):
 
 EXPERIMENTS_FILE = os.path.join(MODELS_DIR, 'experiments.json')
 
+def _get_hyperparams(algorithm: str) -> dict:
+    """Return hyperparameters for the given algorithm."""
+    if algorithm == 'gradient_boosting':
+        return {"n_estimators": 100, "max_depth": 5, "learning_rate": 0.1}
+    elif algorithm == 'random_forest':
+        return {"n_estimators": 100, "max_depth": 10}
+    elif algorithm == 'xgboost':
+        return {"n_estimators": 100, "max_depth": 5, "learning_rate": 0.1}
+    elif algorithm == 'linear_regression':
+        return {"type": "OLS", "regularization": None}
+    return {}
+
 def _log_experiment(algorithm: str, model_type: str, test_size: float, results: dict):
     """Append a training run record to experiments.json"""
     # Load existing log
@@ -395,11 +410,7 @@ def _log_experiment(algorithm: str, model_type: str, test_size: float, results: 
         "split_method": "temporal",
         "n_features": len(FEATURE_NAMES),
         "feature_names": FEATURE_NAMES,
-        "hyperparameters": {
-            "n_estimators": 100,
-            "max_depth": 5 if algorithm == "gradient_boosting" else 10,
-            "learning_rate": 0.1 if algorithm == "gradient_boosting" else None,
-        },
+        "hyperparameters": _get_hyperparams(algorithm),
         "results": results
     }
     
@@ -436,14 +447,30 @@ async def train_model(data: dict):
                 learning_rate=0.1,
                 random_state=42
             )
-        else:
+        elif algorithm == 'random_forest':
             wind_model = RandomForestRegressor(
                 n_estimators=100, 
                 max_depth=10,
                 random_state=42
             )
+        elif algorithm == 'xgboost':
+            wind_model = XGBRegressor(
+                n_estimators=100,
+                max_depth=5,
+                learning_rate=0.1,
+                random_state=42,
+                verbosity=0
+            )
+        elif algorithm == 'linear_regression':
+            wind_model = LinearRegression()
+        else:
+            wind_model = GradientBoostingRegressor(
+                n_estimators=100, max_depth=5, learning_rate=0.1, random_state=42
+            )
         
+        train_start = time.time()
         wind_model.fit(X_train, y_train)
+        train_time = round(time.time() - train_start, 2)
         
         # Evaluate
         y_pred_train = wind_model.predict(X_train)
@@ -474,17 +501,25 @@ async def train_model(data: dict):
             'test_r2': round(test_r2, 1),
             'samples_train': len(X_train),
             'samples_test': len(X_test),
-            'split_method': 'temporal'
+            'split_method': 'temporal',
+            'train_time_sec': train_time
         }
         
         # Save model to disk
         joblib.dump(wind_model, os.path.join(MODELS_DIR, 'wind_model.joblib'))
         
         # Save feature importance
-        wind_importances = [
-            {"feature": name, "importance": round(float(imp), 4)}
-            for name, imp in sorted(zip(FEATURE_NAMES, wind_model.feature_importances_), key=lambda x: x[1], reverse=True)
-        ]
+        if hasattr(wind_model, 'feature_importances_'):
+            wind_importances = [
+                {"feature": name, "importance": round(float(imp), 4)}
+                for name, imp in sorted(zip(FEATURE_NAMES, wind_model.feature_importances_), key=lambda x: x[1], reverse=True)
+            ]
+        else:
+            # Linear regression uses coef_ instead
+            wind_importances = [
+                {"feature": name, "importance": round(abs(float(coef)), 4)}
+                for name, coef in sorted(zip(FEATURE_NAMES, wind_model.coef_), key=lambda x: abs(x[1]), reverse=True)
+            ]
         with open(os.path.join(MODELS_DIR, 'wind_feature_importance.json'), 'w') as f:
             json.dump(wind_importances, f, indent=2)
         
@@ -506,14 +541,30 @@ async def train_model(data: dict):
                 learning_rate=0.1,
                 random_state=42
             )
-        else:
+        elif algorithm == 'random_forest':
             solar_model = RandomForestRegressor(
                 n_estimators=100, 
                 max_depth=10,
                 random_state=42
             )
+        elif algorithm == 'xgboost':
+            solar_model = XGBRegressor(
+                n_estimators=100,
+                max_depth=5,
+                learning_rate=0.1,
+                random_state=42,
+                verbosity=0
+            )
+        elif algorithm == 'linear_regression':
+            solar_model = LinearRegression()
+        else:
+            solar_model = GradientBoostingRegressor(
+                n_estimators=100, max_depth=5, learning_rate=0.1, random_state=42
+            )
         
+        train_start = time.time()
         solar_model.fit(X_train, y_train)
+        train_time = round(time.time() - train_start, 2)
         
         # Evaluate
         y_pred_train = solar_model.predict(X_train)
@@ -544,17 +595,24 @@ async def train_model(data: dict):
             'test_r2': round(test_r2, 1),
             'samples_train': len(X_train),
             'samples_test': len(X_test),
-            'split_method': 'temporal'
+            'split_method': 'temporal',
+            'train_time_sec': train_time
         }
         
         # Save model to disk
         joblib.dump(solar_model, os.path.join(MODELS_DIR, 'solar_model.joblib'))
         
         # Save feature importance
-        solar_importances = [
-            {"feature": name, "importance": round(float(imp), 4)}
-            for name, imp in sorted(zip(FEATURE_NAMES, solar_model.feature_importances_), key=lambda x: x[1], reverse=True)
-        ]
+        if hasattr(solar_model, 'feature_importances_'):
+            solar_importances = [
+                {"feature": name, "importance": round(float(imp), 4)}
+                for name, imp in sorted(zip(FEATURE_NAMES, solar_model.feature_importances_), key=lambda x: x[1], reverse=True)
+            ]
+        else:
+            solar_importances = [
+                {"feature": name, "importance": round(abs(float(coef)), 4)}
+                for name, coef in sorted(zip(FEATURE_NAMES, solar_model.coef_), key=lambda x: abs(x[1]), reverse=True)
+            ]
         with open(os.path.join(MODELS_DIR, 'solar_feature_importance.json'), 'w') as f:
             json.dump(solar_importances, f, indent=2)
         
@@ -588,6 +646,78 @@ async def get_experiments():
             experiments = json.load(f)
         return {"experiments": experiments, "total": len(experiments)}
     return {"experiments": [], "total": 0}
+
+@app.post("/api/compare-models")
+async def compare_models(data: dict):
+    """Train all algorithms and return a comparison table."""
+    test_size = data.get('test_size', 0.2)
+    model_type = data.get('model_type', 'wind')  # Compare on one type at a time for speed
+    
+    algorithms = ['linear_regression', 'gradient_boosting', 'random_forest', 'xgboost']
+    
+    # Get data
+    if model_type == 'solar':
+        X, y = extract_features(solar_data)
+    else:
+        X, y = extract_features(wind_data)
+    
+    split_idx = int(len(X) * (1 - test_size))
+    X_train, X_test = X[:split_idx], X[split_idx:]
+    y_train, y_test = y[:split_idx], y[split_idx:]
+    
+    comparison = []
+    
+    for algo in algorithms:
+        if algo == 'gradient_boosting':
+            model = GradientBoostingRegressor(n_estimators=100, max_depth=5, learning_rate=0.1, random_state=42)
+        elif algo == 'random_forest':
+            model = RandomForestRegressor(n_estimators=100, max_depth=10, random_state=42)
+        elif algo == 'xgboost':
+            model = XGBRegressor(n_estimators=100, max_depth=5, learning_rate=0.1, random_state=42, verbosity=0)
+        elif algo == 'linear_regression':
+            model = LinearRegression()
+        
+        t0 = time.time()
+        model.fit(X_train, y_train)
+        train_time = round(time.time() - t0, 3)
+        
+        y_pred_train = model.predict(X_train)
+        y_pred_test = model.predict(X_test)
+        
+        test_mae = mean_absolute_error(y_test, y_pred_test)
+        test_rmse = np.sqrt(mean_squared_error(y_test, y_pred_test))
+        train_mae = mean_absolute_error(y_train, y_pred_train)
+        
+        ss_res = np.sum((y_test - y_pred_test) ** 2)
+        ss_tot = np.sum((y_test - np.mean(y_test)) ** 2)
+        test_r2 = max(0, 1 - (ss_res / ss_tot)) * 100
+        
+        ss_res_train = np.sum((y_train - y_pred_train) ** 2)
+        ss_tot_train = np.sum((y_train - np.mean(y_train)) ** 2)
+        train_r2 = max(0, 1 - (ss_res_train / ss_tot_train)) * 100
+        
+        comparison.append({
+            "algorithm": algo,
+            "train_r2": round(train_r2, 1),
+            "test_r2": round(test_r2, 1),
+            "train_mae": round(train_mae, 2),
+            "test_mae": round(test_mae, 2),
+            "test_rmse": round(test_rmse, 2),
+            "train_time_sec": train_time,
+            "overfit_gap": round(train_r2 - test_r2, 1)
+        })
+    
+    # Sort by test_r2 descending
+    comparison.sort(key=lambda x: x['test_r2'], reverse=True)
+    
+    return {
+        "model_type": model_type,
+        "test_size": test_size,
+        "samples_train": len(X_train),
+        "samples_test": len(X_test),
+        "comparison": comparison,
+        "best_algorithm": comparison[0]["algorithm"]
+    }
 
 @app.post("/api/predict-with-trained")
 async def predict_with_trained(data: dict):

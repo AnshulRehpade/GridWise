@@ -105,7 +105,8 @@ PORT=3000 npm start
 | POST | `/api/dashboard-summary` | Aggregated wind + solar stats |
 | POST | `/api/model-performance` | MAE, RMSE, MAPE trends + residuals |
 | POST | `/api/ai-insights` | Rule-based energy insights |
-| POST | `/api/train-model` | Train ML models (GB or RF) |
+| POST | `/api/train-model` | Train ML models (GB, RF, XGBoost, Linear) |
+| POST | `/api/compare-models` | Train all 4 algorithms and return comparison |
 | POST | `/api/predict-with-trained` | Predictions from trained models |
 | WS | `/api/ws/realtime` | Live data stream (2s interval) |
 
@@ -114,7 +115,7 @@ PORT=3000 npm start
 ```json
 {
   "model_type": "wind|solar|both",
-  "algorithm": "gradient_boosting|random_forest",
+  "algorithm": "gradient_boosting|random_forest|xgboost|linear_regression",
   "test_size": 0.2
 }
 ```
@@ -145,10 +146,12 @@ The trained models function as a **correction layer** on top of an existing base
 
 ### Model Performance
 
-| Model | Algorithm | Test R² | Test MAE | Notes |
-|-------|-----------|---------|----------|-------|
-| Wind | Gradient Boosting | 99.7% | 0.96 kW | Lag features dominate (strong autocorrelation) |
-| Solar | Gradient Boosting | 98.8% | 1.0 kW | Baseline + rolling volatility + hour cycle |
+| Model | Best Algorithm | Test R² | Test MAE | Why |
+|-------|---------------|---------|----------|-----|
+| Wind | Linear Regression | 99.8% | 0.77 kW | Lag-1 dominance → linear is optimal |
+| Solar | Gradient Boosting | 98.8% | 1.0 kW | Nonlinear weather/hour interactions |
+
+The comparison includes 4 algorithms: Linear Regression (baseline), Gradient Boosting, Random Forest, and XGBoost. Each is evaluated on the same temporal split with training time, overfit gap, and all standard metrics.
 
 The train/test split is **chronological** — the first 80% of timesteps are used for training, and the last 20% form the held-out test set. This prevents future data from leaking into training, which is critical for time-series forecasting.
 
@@ -170,7 +173,8 @@ Solar MAPE is computed on **daylight hours only** (actual > 0.5 kW) to avoid the
 | Uvicorn | ASGI server |
 | Pandas 2.1 | Data loading and filtering |
 | NumPy | Numerical computation |
-| scikit-learn 1.5 | ML models (GBR, RFR), metrics |
+| scikit-learn 1.5 | ML models (GBR, RFR, LinearRegression), metrics |
+| XGBoost | Gradient boosted trees (industry standard) |
 | Joblib | Model serialization |
 
 ### Frontend
