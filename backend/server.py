@@ -7,7 +7,7 @@ from datetime import datetime
 import asyncio
 import random
 import json
-from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
+from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor, IsolationForest
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from xgboost import XGBRegressor
@@ -236,7 +236,8 @@ async def get_machine_consumption(data: dict):
         "stats": {
             "total_consumption": round(total_consumption, 2),
             "anomaly_count": len(anomalies),
-            "anomalies": anomalies[:5]  # Top 5 anomalies
+            "anomalies": anomalies[:5],  # Top 5 threshold-based anomalies
+            "ml_anomaly_available": machine_models['anomaly_detector'] is not None
         }
     }
 
@@ -813,6 +814,194 @@ async def get_feature_importance():
         return {"error": "No trained models available. Train a model first via /api/train-model.", "wind": None, "solar": None}
     
     return result
+
+# ========== Machine Learning: Machine Consumption ==========
+
+# Store machine models
+machine_models = {
+    'anomaly_detector': None,
+    'consumption_forecaster': None,
+    'anomaly_metrics': None,
+    'forecast_metrics': None
+}
+
+@app.post("/api/train-machine-models")
+async def train_machine_models(data: dict):
+    """Train Isolation Forest for anomaly detection + GBR for consumption forecasting."""
+    global machine_models
+    
+    contamination = data.get('contamination', 0.05)  # Expected fraction of anomalies
+    
+    # Prepare features from all machines
+    df = machine_data.copy()
+    
+    # Parse time
+    df['hour'] = df['time'].apply(lambda x: int(x.split(' ')[1].split(':')[0]) if ' ' in str(x) else 0)
+    df['day'] = df['time'].apply(lambda x: int(x.split(' ')[0].split('-')[0]) if ' ' in str(x) else 1)
+    df['month'] = df['time'].apply(lambda x: int(x.split(' ')[0].split('-')[1]) if ' ' in str(x) else 1)
+    
+    # === 1. Isolation Forest for Anomaly Detection ===
+    # Features: energy + temperature for all machines
+    energy_cols = [f'Machine_{i} Energy Consumed (kWh)' for i in range(1, 6)]
+    temp_cols = [f'Machine_{i} Temperature (C)' for i in range(1, 6)]
+    anomaly_features = df[energy_cols + temp_cols].values
+    
+    iso_forest = IsolationForest(
+        n_estimators=100,
+        contamination=contamination,
+        random_state=42
+    )
+    
+    t0 = time.time()
+    iso_forest.fit(anomaly_features)
+    anomaly_train_time = round(time.time() - t0, 3)
+    
+    # Predict anomalies on full dataset
+    anomaly_labels = iso_forest.predict(anomaly_features)  # 1 = normal, -1 = anomaly
+    anomaly_scores = iso_forest.decision_function(anomaly_features)
+    
+    n_anomalies = (anomaly_labels == -1).sum()
+    
+    machine_models['anomaly_detector'] = iso_forest
+    machine_models['anomaly_metrics'] = {
+        'total_samples': len(df),
+        'anomalies_detected': int(n_anomalies),
+        'anomaly_rate': round(n_anomalies / len(df) * 100, 2),
+        'contamination': contamination,
+        'train_time_sec': anomaly_train_time,
+        'avg_anomaly_score': round(float(anomaly_scores[anomaly_labels == -1].mean()), 4) if n_anomalies > 0 else 0
+    }
+    
+    # Save model
+    joblib.dump(iso_forest, os.path.join(MODELS_DIR, 'isolation_forest.joblib'))
+    
+    # === 2. Consumption Forecasting (predict next-hour energy for Machine 1) ===
+    # Features: hour, day, month, current energy (lag), current temp, rolling stats
+    target_col = 'Machine_1 Energy Consumed (kWh)'
+    
+    df['lag_1'] = df[target_col].shift(1)
+    df['lag_2'] = df[target_col].shift(2)
+    df['lag_24'] = df[target_col].shift(24)
+    df['rolling_mean_6'] = df[target_col].shift(1).rolling(6, min_periods=1).mean()
+    df['rolling_std_6'] = df[target_col].shift(1).rolling(6, min_periods=1).std()
+    df['temp_1'] = df['Machine_1 Temperature (C)']
+    df['hours_op'] = df['Machine_1 Hours Operated']
+    
+    # Fill NaN
+    for col in ['lag_1', 'lag_2', 'lag_24', 'rolling_mean_6', 'rolling_std_6']:
+        df[col] = df[col].fillna(df[target_col].median())
+    
+    forecast_features = ['hour', 'day', 'month', 'lag_1', 'lag_2', 'lag_24', 
+                         'rolling_mean_6', 'rolling_std_6', 'temp_1', 'hours_op']
+    
+    X_forecast = df[forecast_features].values.astype(float)
+    y_forecast = df[target_col].values.astype(float)
+    
+    # Temporal split
+    split_idx = int(len(X_forecast) * 0.8)
+    X_train, X_test = X_forecast[:split_idx], X_forecast[split_idx:]
+    y_train, y_test = y_forecast[:split_idx], y_forecast[split_idx:]
+    
+    forecaster = GradientBoostingRegressor(n_estimators=100, max_depth=5, learning_rate=0.1, random_state=42)
+    
+    t0 = time.time()
+    forecaster.fit(X_train, y_train)
+    forecast_train_time = round(time.time() - t0, 2)
+    
+    y_pred_test = forecaster.predict(X_test)
+    y_pred_train = forecaster.predict(X_train)
+    
+    test_mae = mean_absolute_error(y_test, y_pred_test)
+    test_rmse = np.sqrt(mean_squared_error(y_test, y_pred_test))
+    ss_res = np.sum((y_test - y_pred_test) ** 2)
+    ss_tot = np.sum((y_test - np.mean(y_test)) ** 2)
+    test_r2 = max(0, 1 - (ss_res / ss_tot)) * 100
+    
+    machine_models['consumption_forecaster'] = forecaster
+    machine_models['forecast_metrics'] = {
+        'target': 'Machine_1 Energy (next hour)',
+        'features': forecast_features,
+        'test_r2': round(test_r2, 1),
+        'test_mae': round(test_mae, 3),
+        'test_rmse': round(test_rmse, 3),
+        'samples_train': len(X_train),
+        'samples_test': len(X_test),
+        'train_time_sec': forecast_train_time,
+        'split_method': 'temporal'
+    }
+    
+    # Save model
+    joblib.dump(forecaster, os.path.join(MODELS_DIR, 'consumption_forecaster.joblib'))
+    
+    # Save feature importance
+    forecast_importances = [
+        {"feature": name, "importance": round(float(imp), 4)}
+        for name, imp in sorted(zip(forecast_features, forecaster.feature_importances_), key=lambda x: x[1], reverse=True)
+    ]
+    with open(os.path.join(MODELS_DIR, 'consumption_feature_importance.json'), 'w') as f:
+        json.dump(forecast_importances, f, indent=2)
+    
+    return {
+        "status": "success",
+        "anomaly_detection": machine_models['anomaly_metrics'],
+        "consumption_forecast": machine_models['forecast_metrics'],
+        "feature_importance": forecast_importances
+    }
+
+@app.post("/api/machine-anomalies")
+async def detect_machine_anomalies(data: dict):
+    """Run trained Isolation Forest on a specific date and return anomaly scores."""
+    if machine_models['anomaly_detector'] is None:
+        return {"error": "Train machine models first via /api/train-machine-models"}
+    
+    date_str = data.get('date', '01-01-2023')
+    filtered = filter_by_date(machine_data, date_str)
+    
+    if filtered.empty:
+        return {"error": "No data for date", "anomalies": []}
+    
+    energy_cols = [f'Machine_{i} Energy Consumed (kWh)' for i in range(1, 6)]
+    temp_cols = [f'Machine_{i} Temperature (C)' for i in range(1, 6)]
+    features = filtered[energy_cols + temp_cols].values
+    
+    predictions = machine_models['anomaly_detector'].predict(features)
+    scores = machine_models['anomaly_detector'].decision_function(features)
+    
+    anomalies = []
+    for idx, (pred, score) in enumerate(zip(predictions, scores)):
+        if pred == -1:
+            row = filtered.iloc[idx]
+            time_parts = str(row['time']).split(' ')
+            hour = time_parts[1] if len(time_parts) > 1 else '00:00'
+            
+            # Find which machine(s) are anomalous
+            row_data = features[idx]
+            anomalies.append({
+                "time": hour,
+                "anomaly_score": round(float(score), 4),
+                "energies": {f"machine_{i}": round(row_data[i-1], 2) for i in range(1, 6)},
+                "temperatures": {f"machine_{i}": round(row_data[i+4], 2) for i in range(1, 6)}
+            })
+    
+    return {
+        "date": date_str,
+        "total_hours": len(filtered),
+        "anomalous_hours": len(anomalies),
+        "anomaly_rate": round(len(anomalies) / len(filtered) * 100, 1),
+        "anomalies": anomalies,
+        "method": "Isolation Forest",
+        "metrics": machine_models['anomaly_metrics']
+    }
+
+@app.get("/api/machine-model-status")
+async def get_machine_model_status():
+    """Get status of machine consumption models."""
+    return {
+        "anomaly_detector_trained": machine_models['anomaly_detector'] is not None,
+        "consumption_forecaster_trained": machine_models['consumption_forecaster'] is not None,
+        "anomaly_metrics": machine_models['anomaly_metrics'],
+        "forecast_metrics": machine_models['forecast_metrics']
+    }
 
 @app.post("/api/ai-insights")
 async def get_ai_insights(data: dict):

@@ -107,6 +107,9 @@ PORT=3000 npm start
 | POST | `/api/ai-insights` | Rule-based energy insights |
 | POST | `/api/train-model` | Train ML models (GB, RF, XGBoost, Linear) |
 | POST | `/api/compare-models` | Train all 4 algorithms and return comparison |
+| POST | `/api/train-machine-models` | Train Isolation Forest + consumption forecaster |
+| POST | `/api/machine-anomalies` | Detect anomalies on a date (Isolation Forest) |
+| GET | `/api/machine-model-status` | Machine model training status |
 | POST | `/api/predict-with-trained` | Predictions from trained models |
 | WS | `/api/ws/realtime` | Live data stream (2s interval) |
 
@@ -158,9 +161,10 @@ The train/test split is **chronological** — the first 80% of timesteps are use
 Solar MAPE is computed on **daylight hours only** (actual > 0.5 kW) to avoid the well-known zero-division problem with nighttime solar observations.
 
 ### Outputs
-- **Persisted models**: `backend/models/*.joblib`
+- **Persisted models**: `backend/models/*.joblib` (wind, solar, isolation forest, consumption forecaster)
 - **Feature importance**: `backend/models/*_feature_importance.json`
 - **Evaluation metrics**: R², MAE, RMSE returned via API
+- **Anomaly detection**: Isolation Forest scores per hour, multivariate (energy + temperature)
 
 ---
 
