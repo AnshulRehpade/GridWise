@@ -1,0 +1,42 @@
+[
+  {
+    "feature": "lag_24",
+    "importance": 0.5485
+  },
+  {
+    "feature": "temp_1",
+    "importance": 0.3326
+  },
+  {
+    "feature": "lag_1",
+    "importance": 0.0629
+  },
+  {
+    "feature": "hours_op",
+    "importance": 0.0427
+  },
+  {
+    "feature": "hour",
+    "importance": 0.0055
+  },
+  {
+    "feature": "lag_2",
+    "importance": 0.0027
+  },
+  {
+    "feature": "rolling_std_6",
+    "importance": 0.002
+  },
+  {
+    "feature": "month",
+    "importance": 0.0019
+  },
+  {
+    "feature": "rolling_mean_6",
+    "importance": 0.0008
+  },
+  {
+    "feature": "day",
+    "importance": 0.0004
+  }
+]

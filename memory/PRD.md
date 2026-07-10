@@ -15,7 +15,7 @@ Build a modern, showcase-worthy energy management dashboard for a Data Analyst/E
 ### Tech Stack
 - **Frontend**: React 18 + Tailwind CSS + Recharts + Framer Motion
 - **Backend**: FastAPI (Python) with Pandas/NumPy/Scikit-learn
-- **AI**: Claude Sonnet 4.5 via Emergent LLM Key
+- **AI**: Rule-based insights (expandable to LLM)
 - **ML**: Gradient Boosting & Random Forest Regressors
 - **Real-time**: WebSocket for live streaming data simulation
 
